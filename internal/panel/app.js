@@ -320,7 +320,7 @@ async function loadModels() {
   try {
     // 探测数据是可选增强：拉取失败不影响模型列表本身
     const [d, pr] = await Promise.all([api('models'), api('model_probes').catch(() => ({}))]);
-    const list = d.models || [];
+    const list = d.models || d.data || [];
     if (!list.length) { tb.innerHTML = '<tr><td colspan="7"><div class="empty">上游未返回模型</div></td></tr>'; return; }
     const probes = pr.probes || {};
     const probeKeys = Object.keys(probes);

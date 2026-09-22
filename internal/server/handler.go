@@ -140,7 +140,14 @@ func NewHandler(cfg Config) *Handler {
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Path
-	// 全局路径兼容分发，防止客户端前缀不一致导致 404
+
+	// 面板内部请求 (/panel/...) 直接放行给 panel 路由，避免内部 API 被外层重定向误伤
+	if strings.HasPrefix(p, "/panel") {
+		h.mux.ServeHTTP(w, r)
+		return
+	}
+
+	// 全局对外 API 路径兼容分发，防止客户端前缀不一致导致 404
 	if r.Method == http.MethodPost {
 		if strings.HasSuffix(p, "/responses") || strings.HasSuffix(p, "/responses/") {
 			h.withAuth(h.responsesHandler)(w, r)
