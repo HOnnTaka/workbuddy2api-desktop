@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WorkBuddy2API Panel</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: #0b0f19;
+      color: #e2e8f0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+      -webkit-font-smoothing: antialiased;
+      overflow: hidden;
+    }
+    .card {
+      background: #131b2e;
+      padding: 38px 46px;
+      border-radius: 16px;
+      box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(51, 65, 85, 0.5);
+      text-align: center;
+      max-width: 440px;
+      width: 90%;
+      animation: fadeIn 0.3s ease-out;
+    }
+    .spinner {
+      width: 46px;
+      height: 46px;
+      border: 3.5px solid rgba(148, 163, 184, 0.18);
+      border-top-color: #38bdf8;
+      border-radius: 50%;
+      animation: spin 0.9s cubic-bezier(0.5, 0.1, 0.4, 0.9) infinite;
+      margin: 0 auto 22px auto;
+    }
+    h2 { font-size: 20px; font-weight: 650; margin-bottom: 8px; color: #f8fafc; letter-spacing: -0.01em; }
+    p { font-size: 13.5px; color: #94a3b8; margin-bottom: 22px; line-height: 1.6; }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 14px;
+      background: #090d16;
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      border-radius: 20px;
+      font-size: 12px;
+      color: #38bdf8;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+    .pulse-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #38bdf8;
+      box-shadow: 0 0 8px #38bdf8;
+      animation: pulse 1.5s infinite;
+    }
+    .btn-group {
+      margin-top: 22px;
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+    }
+    .btn {
+      padding: 8px 18px;
+      background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+      color: #ffffff;
+      border: none;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 13px;
+      transition: all 0.18s ease;
+      box-shadow: 0 4px 14px rgba(2, 132, 199, 0.35);
+    }
+    .btn:hover {
+      filter: brightness(1.1);
+      transform: translateY(-1px);
+      box-shadow: 0 6px 18px rgba(2, 132, 199, 0.5);
+    }
+    .btn:active {
+      transform: translateY(0);
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.85); } }
+    @keyframes fadeIn { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="spinner"></div>
+    <h2>WorkBuddy2API Panel</h2>
+    <p id="msg">核心服务启动中，正在连接控制台...</p>
+    <div class="status">
+      <span class="pulse-dot"></span>
+      <span id="status-text">127.0.0.1:7863</span>
+    </div>
+    <div class="btn-group">
+      <button class="btn" onclick="directGo()">直接打开面板</button>
+    </div>
+  </div>
+
+  <script>
+    const targetUrl = 'http://127.0.0.1:7863/panel/';
+    let redirected = false;
+
+    function directGo() {
+      if (redirected) return;
+      redirected = true;
+      window.location.replace(targetUrl);
+    }
+
+    async function checkAlive() {
+      if (redirected) return;
+      try {
+        // 使用 no-cors 发起探活请求，端口一旦连通无论返回什么状态都会 resolve
+        await fetch(targetUrl, { mode: 'no-cors', cache: 'no-cache' });
+        directGo();
+      } catch (e) {
+        // 尚未连通，继续轮询
+      }
+    }
+
+    // 高频探活：每 200 毫秒检查一次，一旦可用立刻无缝直连
+    const timer = setInterval(checkAlive, 200);
+
+    // 最大等待兜底：1.8 秒后无论如何尝试直接跳转
+    setTimeout(() => {
+      clearInterval(timer);
+      directGo();
+    }, 1800);
+  </script>
+</body>
+</html>
