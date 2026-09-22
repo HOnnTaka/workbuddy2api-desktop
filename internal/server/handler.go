@@ -123,7 +123,13 @@ func NewHandler(cfg Config) *Handler {
 	}
 	h := &Handler{cfg: cfg, mux: http.NewServeMux()}
 	h.mux.HandleFunc("POST /v1/chat/completions", h.withAuth(h.chatCompletions))
+	h.mux.HandleFunc("POST /chat/completions", h.withAuth(h.chatCompletions))
+	h.mux.HandleFunc("POST /v1/responses", h.withAuth(h.responsesHandler))
+	h.mux.HandleFunc("POST /responses", h.withAuth(h.responsesHandler))
+	h.mux.HandleFunc("POST /v1/messages", h.withAuth(h.messagesHandler))
+	h.mux.HandleFunc("POST /messages", h.withAuth(h.messagesHandler))
 	h.mux.HandleFunc("GET /v1/models", h.withAuth(h.models))
+	h.mux.HandleFunc("GET /models", h.withAuth(h.models))
 	h.mux.HandleFunc("GET /status", h.withAuth(h.status))
 	h.mux.HandleFunc("GET /healthz", h.healthz)
 	if cfg.Panel != nil {
@@ -133,6 +139,27 @@ func NewHandler(cfg Config) *Handler {
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	p := r.URL.Path
+	// 全局路径兼容分发，防止客户端前缀不一致导致 404
+	if r.Method == http.MethodPost {
+		if strings.HasSuffix(p, "/responses") || strings.HasSuffix(p, "/responses/") {
+			h.withAuth(h.responsesHandler)(w, r)
+			return
+		}
+		if strings.HasSuffix(p, "/chat/completions") || strings.HasSuffix(p, "/chat/completions/") {
+			h.withAuth(h.chatCompletions)(w, r)
+			return
+		}
+		if strings.HasSuffix(p, "/messages") || strings.HasSuffix(p, "/messages/") {
+			h.withAuth(h.messagesHandler)(w, r)
+			return
+		}
+	} else if r.Method == http.MethodGet {
+		if strings.HasSuffix(p, "/models") || strings.HasSuffix(p, "/models/") {
+			h.withAuth(h.models)(w, r)
+			return
+		}
+	}
 	h.mux.ServeHTTP(w, r)
 }
 
