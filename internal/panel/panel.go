@@ -11,6 +11,7 @@
 package panel
 
 import (
+	"fmt"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -180,6 +181,7 @@ func (p *Panel) routes() {
 	p.mux.HandleFunc("GET /panel/api/model_probes", p.withAuth(p.modelProbes))
 	p.mux.HandleFunc("GET /panel/api/config", p.withAuth(p.getConfig))
 	p.mux.HandleFunc("POST /panel/api/config", p.withAuth(p.saveConfig))
+	p.mux.HandleFunc("GET /panel/api/check_update", p.withAuth(p.checkUpdate))
 }
 
 // ServeHTTP 统一入口：先写安全响应头再分发，保证页面、静态资源、API
@@ -634,4 +636,68 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func writeErr(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]any{"ok": false, "error": msg})
+}
+
+
+func (p *Panel) checkUpdate(w http.ResponseWriter, r *http.Request) {
+	currentVer := "v1.11.1"
+
+	repos := []string{
+		"HOnnTaka/workbuddy2api-desktop",
+		"linguo2625469/workbuddy2api-panel",
+	}
+
+	client := &http.Client{
+		Timeout: 8 * time.Second,
+	}
+
+	for _, repo := range repos {
+		apiURL := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", repo)
+		req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, apiURL, nil)
+		if err != nil {
+			continue
+		}
+		req.Header.Set("User-Agent", "WorkBuddy2API-Desktop/1.0")
+		req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+		resp, err := client.Do(req)
+		if err != nil || resp.StatusCode != http.StatusOK {
+			if resp != nil {
+				_ = resp.Body.Close()
+			}
+			continue
+		}
+
+		var rel struct {
+			TagName string `json:"tag_name"`
+			HTMLURL string `json:"html_url"`
+			Body    string `json:"body"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
+			_ = resp.Body.Close()
+			continue
+		}
+		_ = resp.Body.Close()
+
+		latest := strings.TrimSpace(rel.TagName)
+		if latest != "" {
+			writeJSON(w, http.StatusOK, map[string]any{
+				"ok":              true,
+				"current_version": currentVer,
+				"latest_version":  latest,
+				"has_update":      latest != currentVer,
+				"release_url":     rel.HTMLURL,
+				"release_notes":   rel.Body,
+			})
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":              true,
+		"current_version": currentVer,
+		"latest_version":  currentVer,
+		"has_update":      false,
+		"message":         "当前已是最新稳定版本",
+	})
 }

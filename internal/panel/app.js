@@ -1675,21 +1675,22 @@ if ($('btnPk')) $('btnPk').onclick = loadPackages;
     });
   };
 
-  // 关于页面更新检查绑定
+  // 关于页面更新检查绑定（经后端同源代理，彻底规避浏览器 CSP 与跨域拦截）
   document.addEventListener('click', async function(e) {
     if (e.target && e.target.id === 'btnCheckUpdateAbout') {
       const btn = e.target;
       btn.innerText = '正在检查...';
       btn.disabled = true;
       try {
-        const res = await fetch('https://api.github.com/repos/linguo2625469/workbuddy2api-panel/releases/latest');
-        const data = await res.json();
-        if (data && data.tag_name) {
-          if (data.tag_name === 'v1.11.1') {
-            toast('当前已是最新内核版本：' + data.tag_name, 'ok');
+        const res = await api('check_update');
+        if (res && res.ok) {
+          if (res.has_update) {
+            toast('发现新版本：' + res.latest_version + '，可前往发布页更新', 'warn');
           } else {
-            toast('发现新版本：' + data.tag_name + '，可由托盘一键自动更新', 'warn');
+            toast('当前已是最新版本：' + res.current_version, 'ok');
           }
+        } else {
+          toast(res.error || '检查更新失败', 'err');
         }
       } catch(err) {
         toast('检查更新失败：' + err.message, 'err');
