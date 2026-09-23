@@ -185,6 +185,8 @@ func (p *Panel) routes() {
 	p.mux.HandleFunc("POST /panel/api/config", p.withAuth(p.saveConfig))
 	p.mux.HandleFunc("GET /panel/api/check_update", p.checkUpdate)
 	p.mux.HandleFunc("POST /panel/api/open_browser", p.openBrowser)
+	p.mux.HandleFunc("GET /panel/api/desktop_settings", p.getDesktopSettings)
+	p.mux.HandleFunc("POST /panel/api/desktop_settings", p.saveDesktopSettings)
 }
 
 // ServeHTTP 统一入口：先写安全响应头再分发，保证页面、静态资源、API

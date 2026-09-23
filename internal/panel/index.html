@@ -920,6 +920,14 @@ button.primary:hover:not(:disabled) {
             <span style="font-family:var(--mono); color:var(--ink);">./logs/wb2api.log</span>
           </div>
           <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--line-soft);">
+            <span style="color:var(--ink-3);">开机自动启动</span>
+            <span id="aboutAutoStart" style="font-family:var(--mono); color:var(--ink);">已关闭（默认）</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--line-soft);">
+            <span style="color:var(--ink-3);">启动显示模式</span>
+            <span id="aboutStartMode" style="font-family:var(--mono); color:var(--ink);">最小化静默启动（默认开启）</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--line-soft);">
             <span style="color:var(--ink-3);">开源许可证</span>
             <span style="font-family:var(--mono); color:var(--ink);">MIT License</span>
           </div>
@@ -1085,6 +1093,33 @@ button.primary:hover:not(:disabled) {
             <div class="switch"><span class="lb">会话粘性路由</span>
               <input type="checkbox" name="session_sticky_enabled"></div>
             <div class="hint" style="margin-top:10px">Upstash Redis 镜像、凭证目录与状态文件路径需手工编辑配置文件（判为重启项）。</div>
+          </div>
+        </div>
+
+        <div class="box" id="cfgDesktopBox">
+          <header><h3>桌面端与系统行为</h3><span class="grow"></span><span class="note">随桌面托盘程序即时生效</span></header>
+          <div class="pad">
+            <div class="grid2">
+              <label class="fld">
+                <span class="lb">开机自启（默认关闭）</span>
+                <div class="inline" style="gap:10px; align-items:center; margin-top:6px;">
+                  <input type="checkbox" id="cfgAutoStart" style="width:18px; height:18px; cursor:pointer;">
+                  <span style="font-size:13px; color:var(--ink-2);">开机登录 Windows 后自动在后台启动托盘程序</span>
+                </div>
+                <span class="hint">写入当前用户的注册表自启动项（无控制台黑框）</span>
+              </label>
+              <label class="fld">
+                <span class="lb">最小化启动（默认开启）</span>
+                <div class="inline" style="gap:10px; align-items:center; margin-top:6px;">
+                  <input type="checkbox" id="cfgStartMinimized" style="width:18px; height:18px; cursor:pointer;">
+                  <span style="font-size:13px; color:var(--ink-2);">启动时不弹出页面窗口，直接在系统托盘静默运行</span>
+                </div>
+                <span class="hint">消除启动时的网页弹窗，随时通过托盘图标唤出</span>
+              </label>
+            </div>
+            <div style="margin-top:14px; display:flex; justify-content:flex-end;">
+              <button type="button" class="xs primary" id="btnSaveDesktopCfg">保存桌面设置</button>
+            </div>
           </div>
         </div>
 

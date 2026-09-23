@@ -49,3 +49,5 @@ desktop/src-tauri/target/
 target/
 *.pdb
 logs/
+
+.gocache/

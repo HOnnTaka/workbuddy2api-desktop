@@ -6,15 +6,106 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tauri::{
-    menu::{Menu, MenuItem, PredefinedMenuItem},
+    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Manager, Url, WebviewUrl, WebviewWindowBuilder,
 };
 
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 const INJECT_SCRIPT: &str = include_str!("../../ui/inject.js");
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DesktopSettings {
+    #[serde(default = "default_false")]
+    pub auto_start: bool,
+    #[serde(default = "default_true")]
+    pub start_minimized: bool,
+}
+
+fn default_false() -> bool {
+    false
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for DesktopSettings {
+    fn default() -> Self {
+        Self {
+            auto_start: false,
+            start_minimized: true,
+        }
+    }
+}
+
+impl DesktopSettings {
+    pub fn load(path: &Path) -> Self {
+        if let Ok(content) = fs::read_to_string(path) {
+            if let Ok(settings) = serde_json::from_str::<DesktopSettings>(&content) {
+                return settings;
+            }
+        }
+        let default_settings = Self::default();
+        let _ = default_settings.save(path);
+        default_settings
+    }
+
+    pub fn save(&self, path: &Path) -> Result<(), String> {
+        let content = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
+        fs::write(path, content).map_err(|e| e.to_string())
+    }
+}
+
+pub fn set_windows_autostart(exe_path: &Path, enable: bool) {
+    if enable {
+        let exe_str = format!("\"{}\"", exe_path.to_string_lossy());
+        let _ = Command::new("reg")
+            .args([
+                "add",
+                r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
+                "/v",
+                "WorkBuddy2APIPanel",
+                "/t",
+                "REG_SZ",
+                "/d",
+                &exe_str,
+                "/f",
+            ])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+    } else {
+        let _ = Command::new("reg")
+            .args([
+                "delete",
+                r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
+                "/v",
+                "WorkBuddy2APIPanel",
+                "/f",
+            ])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+    }
+}
+
+pub fn is_windows_autostart_active() -> bool {
+    let output = Command::new("reg")
+        .args([
+            "query",
+            r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
+            "/v",
+            "WorkBuddy2APIPanel",
+        ])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output();
+
+    match output {
+        Ok(out) => out.status.success(),
+        Err(_) => false,
+    }
+}
 
 #[derive(Clone)]
 pub struct AppState {
@@ -23,6 +114,8 @@ pub struct AppState {
     pub exe_path: PathBuf,
     pub log_path: PathBuf,
     pub version_path: PathBuf,
+    pub settings_path: PathBuf,
+    pub desktop_exe_path: PathBuf,
 }
 
 #[derive(Debug, Deserialize)]
@@ -50,6 +143,7 @@ impl AppState {
         let _ = fs::create_dir_all(&log_dir);
         let log_path = log_dir.join("wb2api.log");
         let version_path = base_dir.join("version.txt");
+        let settings_path = base_dir.join("desktop_settings.json");
 
         if !version_path.exists() {
             let _ = fs::write(&version_path, "v1.11.1");
@@ -61,6 +155,8 @@ impl AppState {
             exe_path,
             log_path,
             version_path,
+            settings_path,
+            desktop_exe_path: current_exe,
         }
     }
 
@@ -236,13 +332,24 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
+                let _ = window.unminimize();
                 let _ = window.set_focus();
             }
         }))
         .manage(state.clone())
         .setup(move |app| {
+            let settings_path = state.settings_path.clone();
+            let desktop_exe = state.desktop_exe_path.clone();
+            let current_settings = DesktopSettings::load(&settings_path);
+
+            // 注册表同步
+            let reg_active = is_windows_autostart_active();
+            if current_settings.auto_start != reg_active {
+                set_windows_autostart(&desktop_exe, current_settings.auto_start);
+            }
+
             // 动态构建主窗口并注入全站样式与守护脚本
-            let _window = WebviewWindowBuilder::new(
+            let mut builder = WebviewWindowBuilder::new(
                 app,
                 "main",
                 WebviewUrl::App(PathBuf::from("index.html")),
@@ -252,7 +359,7 @@ pub fn run() {
             .min_inner_size(820.0, 600.0)
             .resizable(true)
             .initialization_script(INJECT_SCRIPT)
-                        .on_navigation(|url| {
+            .on_navigation(|url| {
                 if url.scheme() == "http" || url.scheme() == "https" {
                     if url.host_str() != Some("127.0.0.1") && url.host_str() != Some("localhost") {
                         let _ = open::that(url.as_str());
@@ -260,10 +367,17 @@ pub fn run() {
                     }
                 }
                 true
-            })
-.build()?;
+            });
+
+            // 核心修复：最小化启动（默认开启）时，窗口直接设为不可见，彻底消除启动时的页面弹窗
+            if current_settings.start_minimized {
+                builder = builder.visible(false);
+            }
+
+            let _window = builder.build()?;
 
             let app_handle = app.handle().clone();
+            let settings_path_for_ready = settings_path.clone();
 
             // 监听服务健康检查，就绪后无缝切入 Web 面板
             thread::spawn(move || {
@@ -291,6 +405,12 @@ pub fn run() {
                             if let Ok(url) = Url::parse("http://127.0.0.1:7863/panel/") {
                                 let _ = window.navigate(url);
                             }
+                            // 如果用户未开启最小化启动，在服务就绪时才展示主界面
+                            let s = DesktopSettings::load(&settings_path_for_ready);
+                            if !s.start_minimized {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
                         }
                         break;
                     }
@@ -301,6 +421,25 @@ pub fn run() {
             let open_item = MenuItem::with_id(app, "open", "打开主面板", true, None::<&str>)?;
             let browser_item = MenuItem::with_id(app, "browser", "在浏览器中打开 WebUI", true, None::<&str>)?;
             let sep1 = PredefinedMenuItem::separator(app)?;
+
+            let autostart_item = CheckMenuItem::with_id(
+                app,
+                "autostart",
+                "开机自动启动",
+                true,
+                current_settings.auto_start,
+                None::<&str>,
+            )?;
+            let minimized_item = CheckMenuItem::with_id(
+                app,
+                "minimized",
+                "最小化启动 (静默后台)",
+                true,
+                current_settings.start_minimized,
+                None::<&str>,
+            )?;
+            let sep_cfg = PredefinedMenuItem::separator(app)?;
+
             let restart_item = MenuItem::with_id(app, "restart", "重启核心服务", true, None::<&str>)?;
             let toggle_item = MenuItem::with_id(app, "toggle", "停止/启动服务", true, None::<&str>)?;
             let sep2 = PredefinedMenuItem::separator(app)?;
@@ -316,6 +455,9 @@ pub fn run() {
                     &open_item,
                     &browser_item,
                     &sep1,
+                    &autostart_item,
+                    &minimized_item,
+                    &sep_cfg,
                     &restart_item,
                     &toggle_item,
                     &sep2,
@@ -326,6 +468,11 @@ pub fn run() {
                     &quit_item,
                 ],
             )?;
+
+            let autostart_clone = autostart_item.clone();
+            let minimized_clone = minimized_item.clone();
+            let settings_path_for_menu = settings_path.clone();
+            let desktop_exe_for_menu = desktop_exe.clone();
 
             let _tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().cloned().expect("缺少应用图标"))
@@ -338,11 +485,25 @@ pub fn run() {
                         "open" => {
                             if let Some(w) = app_handle.get_webview_window("main") {
                                 let _ = w.show();
+                                let _ = w.unminimize();
                                 let _ = w.set_focus();
                             }
                         }
                         "browser" => {
                             let _ = open::that("http://127.0.0.1:7863/panel/");
+                        }
+                        "autostart" => {
+                            let mut s = DesktopSettings::load(&settings_path_for_menu);
+                            s.auto_start = !s.auto_start;
+                            let _ = s.save(&settings_path_for_menu);
+                            set_windows_autostart(&desktop_exe_for_menu, s.auto_start);
+                            let _ = autostart_clone.set_checked(s.auto_start);
+                        }
+                        "minimized" => {
+                            let mut s = DesktopSettings::load(&settings_path_for_menu);
+                            s.start_minimized = !s.start_minimized;
+                            let _ = s.save(&settings_path_for_menu);
+                            let _ = minimized_clone.set_checked(s.start_minimized);
                         }
                         "restart" => {
                             if let Some(w) = app_handle.get_webview_window("main") {
@@ -360,6 +521,7 @@ pub fn run() {
                         "about" => {
                             if let Some(w) = app_handle.get_webview_window("main") {
                                 let _ = w.show();
+                                let _ = w.unminimize();
                                 let _ = w.set_focus();
                                 let _ = w.eval("if (window.__wb2api_show_about) window.__wb2api_show_about();");
                             }
@@ -394,7 +556,9 @@ pub fn run() {
                             let _ = if window.is_visible().unwrap_or(false) {
                                 window.hide()
                             } else {
-                                window.show().and_then(|_| window.set_focus())
+                                let _ = window.show();
+                                let _ = window.unminimize();
+                                window.set_focus()
                             };
                         }
                     }

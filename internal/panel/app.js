@@ -146,8 +146,9 @@ function go(v) {
   document.querySelectorAll('.view').forEach(s => s.hidden = s.id !== 'view-' + v);
   document.querySelectorAll('.nav a').forEach(a => a.classList.toggle('on', a.dataset.view === v));
   $('ttl').textContent = TITLES[v];
+  if (v === 'about') { loadDesktopSettings(); }
   if (v === 'models' && !$('mdBody').children.length) loadModels();
-  if (v === 'config') loadConfig();
+  if (v === 'config') { loadConfig(); loadDesktopSettings(); }
   if (v === 'logs') loadLogs();
   if (v === 'usage') loadUsage();
   if (v === 'packages') loadPackages();
@@ -436,6 +437,21 @@ function put(obj, path, val) {
   let o = obj;
   for (let i = 0; i < path.length - 1; i++) { if (typeof o[path[i]] !== 'object' || o[path[i]] === null) o[path[i]] = {}; o = o[path[i]]; }
   o[path[path.length - 1]] = val;
+}
+
+
+async function loadDesktopSettings() {
+  try {
+    const res = await api('desktop_settings');
+    if (res && res.ok) {
+      if ($('cfgAutoStart')) $('cfgAutoStart').checked = !!res.auto_start;
+      if ($('cfgStartMinimized')) $('cfgStartMinimized').checked = !!res.start_minimized;
+      if ($('aboutAutoStart')) $('aboutAutoStart').textContent = res.auto_start ? '已开启' : '已关闭（默认）';
+      if ($('aboutStartMode')) $('aboutStartMode').textContent = res.start_minimized ? '最小化静默启动（默认开启）' : '直接弹出主窗口';
+    }
+  } catch (e) {
+    // 忽略加载异常
+  }
 }
 
 async function loadConfig() {
@@ -1705,6 +1721,24 @@ if ($('btnPk')) $('btnPk').onclick = loadPackages;
       openExternal(href);
     }
   });
+
+  // 桌面配置保存按钮绑定
+  if ($('btnSaveDesktopCfg')) {
+    $('btnSaveDesktopCfg').onclick = async () => {
+      try {
+        const autoStart = $('cfgAutoStart') ? $('cfgAutoStart').checked : false;
+        const startMinimized = $('cfgStartMinimized') ? $('cfgStartMinimized').checked : true;
+        await api('desktop_settings', {
+          method: 'POST',
+          body: JSON.stringify({ auto_start: autoStart, start_minimized: startMinimized })
+        });
+        toast('桌面端系统设置已保存', 'ok');
+        loadDesktopSettings();
+      } catch (e) {
+        toast('保存桌面设置失败：' + e.message, 'err');
+      }
+    };
+  }
 
   // 关于页面与遮罩按钮绑定
   if ($('btnRepoDesktop')) $('btnRepoDesktop').onclick = () => openExternal('https://github.com/HOnnTaka/workbuddy2api-desktop');
