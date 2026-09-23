@@ -134,8 +134,10 @@ impl AppState {
 
 pub fn check_and_update(state: AppState) {
     thread::spawn(move || {
-        let repo = "linguo2625469/workbuddy2api-panel";
-        let api_url = format!("https://api.github.com/repos/{}/releases/latest", repo);
+        let repos = [
+            "HOnnTaka/workbuddy2api-desktop",
+            "linguo2625469/workbuddy2api-panel",
+        ];
 
         let client = match reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(15))
@@ -146,70 +148,74 @@ pub fn check_and_update(state: AppState) {
             Err(_) => return,
         };
 
-        let release: GithubRelease = match client.get(&api_url).send().and_then(|r| r.json()) {
-            Ok(data) => data,
-            Err(_) => return,
-        };
+        for repo in repos {
+            let api_url = format!("https://api.github.com/repos/{}/releases/latest", repo);
+            let release: GithubRelease = match client.get(&api_url).send().and_then(|r| r.json()) {
+                Ok(data) => data,
+                Err(_) => continue,
+            };
 
-        let current_ver = state.get_current_version();
-        let latest_ver = release.tag_name.trim();
+            let current_ver = state.get_current_version();
+            let latest_ver = release.tag_name.trim();
 
-        if latest_ver != current_ver {
-            if let Some(asset) = release
-                .assets
-                .iter()
-                .find(|a| a.name.contains("windows-amd64.zip"))
-            {
-                let temp_zip = state.base_dir.join("_update_temp.zip");
-                let temp_dir = state.base_dir.join("_update_temp");
+            if latest_ver != current_ver {
+                if let Some(asset) = release
+                    .assets
+                    .iter()
+                    .find(|a| a.name.contains("windows-amd64.zip"))
+                {
+                    let temp_zip = state.base_dir.join("_update_temp.zip");
+                    let temp_dir = state.base_dir.join("_update_temp");
 
-                if let Ok(mut resp) = client.get(&asset.browser_download_url).send() {
-                    if let Ok(mut file) = fs::File::create(&temp_zip) {
-                        let _ = std::io::copy(&mut resp, &mut file);
+                    if let Ok(mut resp) = client.get(&asset.browser_download_url).send() {
+                        if let Ok(mut file) = fs::File::create(&temp_zip) {
+                            let _ = std::io::copy(&mut resp, &mut file);
+                        }
                     }
-                }
 
-                if temp_zip.exists() {
-                    let _ = fs::remove_dir_all(&temp_dir);
-                    let _ = fs::create_dir_all(&temp_dir);
+                    if temp_zip.exists() {
+                        let _ = fs::remove_dir_all(&temp_dir);
+                        let _ = fs::create_dir_all(&temp_dir);
 
-                    let unpack_res = Command::new("tar")
-                        .args(["-xf", temp_zip.to_str().unwrap(), "-C", temp_dir.to_str().unwrap()])
-                        .creation_flags(CREATE_NO_WINDOW)
-                        .status();
+                        let unpack_res = Command::new("tar")
+                            .args(["-xf", temp_zip.to_str().unwrap(), "-C", temp_dir.to_str().unwrap()])
+                            .creation_flags(CREATE_NO_WINDOW)
+                            .status();
 
-                    if unpack_res.is_ok() {
-                        state.stop_backend();
-                        thread::sleep(Duration::from_millis(1000));
+                        if unpack_res.is_ok() {
+                            state.stop_backend();
+                            thread::sleep(Duration::from_millis(1000));
 
-                        if let Ok(entries) = fs::read_dir(&temp_dir) {
-                            for entry in entries.flatten() {
-                                let path = entry.path();
-                                if path.is_file() && path.file_name().unwrap_or_default() == "wb2api.exe" {
-                                    let backup_exe = state.base_dir.join("wb2api.exe.bak");
-                                    let _ = fs::remove_file(&backup_exe);
-                                    let _ = fs::rename(&state.exe_path, &backup_exe);
-                                    let _ = fs::copy(&path, &state.exe_path);
-                                    let _ = fs::write(&state.version_path, latest_ver);
-                                    break;
-                                } else if path.is_dir() {
-                                    let sub_exe = path.join("wb2api.exe");
-                                    if sub_exe.exists() {
+                            if let Ok(entries) = fs::read_dir(&temp_dir) {
+                                for entry in entries.flatten() {
+                                    let path = entry.path();
+                                    if path.is_file() && path.file_name().unwrap_or_default() == "wb2api.exe" {
                                         let backup_exe = state.base_dir.join("wb2api.exe.bak");
                                         let _ = fs::remove_file(&backup_exe);
                                         let _ = fs::rename(&state.exe_path, &backup_exe);
-                                        let _ = fs::copy(&sub_exe, &state.exe_path);
+                                        let _ = fs::copy(&path, &state.exe_path);
                                         let _ = fs::write(&state.version_path, latest_ver);
                                         break;
+                                    } else if path.is_dir() {
+                                        let sub_exe = path.join("wb2api.exe");
+                                        if sub_exe.exists() {
+                                            let backup_exe = state.base_dir.join("wb2api.exe.bak");
+                                            let _ = fs::remove_file(&backup_exe);
+                                            let _ = fs::rename(&state.exe_path, &backup_exe);
+                                            let _ = fs::copy(&sub_exe, &state.exe_path);
+                                            let _ = fs::write(&state.version_path, latest_ver);
+                                            break;
+                                        }
                                     }
                                 }
                             }
-                        }
 
-                        let _ = fs::remove_file(&temp_zip);
-                        let _ = fs::remove_dir_all(&temp_dir);
-                        let _ = state.start_backend();
+                            let _ = fs::remove_file(&temp_zip);
+                            let _ = fs::remove_dir_all(&temp_dir);
+                            let _ = state.start_backend();
+                        }
                     }
+                    return;
                 }
             }
         }
