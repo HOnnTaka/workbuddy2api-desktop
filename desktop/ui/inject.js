@@ -5,7 +5,7 @@
   // 1. 全局注入极细现代化平滑滚动条（双重保障）
   const styleEl = document.createElement('style');
   styleEl.id = '__wb2api_desktop_theme_clean__';
-  styleEl.textContent = 
+  styleEl.textContent = `
     html, body, *, *::before, *::after {
       scrollbar-width: thin !important;
       scrollbar-color: rgba(148, 163, 184, 0.3) transparent !important;
@@ -49,7 +49,7 @@
     [data-theme="light"] *::-webkit-scrollbar-thumb:hover {
       background: rgba(59, 91, 219, 0.75) !important;
     }
-  ;
+  `;
   document.head.appendChild(styleEl);
 
   // 2. 托盘联动接口
@@ -69,5 +69,13 @@
       const countEl = document.getElementById('reconnectCount');
       if (countEl) countEl.textContent = '托盘已下发重启命令，正在重新连接...';
     }
+  };
+
+  // 3. 拦截外部跳转与 window.open，经 on_navigation 调度系统默认浏览器打开
+  window.open = function(url) {
+    if (url && (String(url).startsWith('http://') || String(url).startsWith('https://'))) {
+      location.href = url;
+    }
+    return null;
   };
 })();

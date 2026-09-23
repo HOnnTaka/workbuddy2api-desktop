@@ -847,11 +847,10 @@ button.primary:hover:not(:disabled) {
               基于腾讯 CodeBuddy 多账号管理的高性能聚合网关，提供 OpenAI / Responses / Messages 三协议统一接入，配备原生桌面托盘守护与后台静默运行能力。
             </div>
           </div>
-          <div style="display:flex; gap:10px;">
+          <div style="display:flex; gap:10px; align-items:center;">
             <button id="btnCheckUpdateAbout" class="primary" style="padding:8px 18px; font-size:13px;">检查更新</button>
-            <a href="https://github.com/linguo2625469/workbuddy2api-panel" target="_blank" style="text-decoration:none;">
-              <button type="button" style="padding:8px 16px; font-size:13px;">上游项目</button>
-            </a>
+            <button id="btnRepoDesktop" type="button" style="padding:8px 16px; font-size:13px;">桌面端仓库</button>
+            <button id="btnRepoUpstream" type="button" style="padding:8px 16px; font-size:13px;">上游项目</button>
           </div>
         </div>
       </div>
@@ -923,6 +922,10 @@ button.primary:hover:not(:disabled) {
           <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--line-soft);">
             <span style="color:var(--ink-3);">开源许可证</span>
             <span style="font-family:var(--mono); color:var(--ink);">MIT License</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--line-soft);">
+            <span style="color:var(--ink-3);">桌面端仓库</span>
+            <span><a href="https://github.com/HOnnTaka/workbuddy2api-desktop" target="_blank" style="color:var(--accent); text-decoration:none;">HOnnTaka/workbuddy2api-desktop</a></span>
           </div>
           <div style="display:flex; justify-content:space-between; padding:8px 0;">
             <span style="color:var(--ink-3);">上游鸣谢</span>
@@ -1239,8 +1242,8 @@ button.primary:hover:not(:disabled) {
       <span id="reconnectCount" class="reconnect-count">正在探活...</span>
     </div>
     <div class="reconnect-actions">
-      <button id="btnShieldRetry" class="xs primary" onclick="window.__wb2api_retry_reconnect()">立即重试</button>
-      <button id="btnShieldReload" class="xs" onclick="location.reload()">重新加载</button>
+      <button id="btnShieldRetry" class="xs primary">立即重试</button>
+      <button id="btnShieldReload" class="xs">重新加载</button>
     </div>
   </div>
 </div>

@@ -49,6 +49,20 @@ function toast(msg, cls) {
   $('toasts').appendChild(el);
   setTimeout(() => el.remove(), 3600);
 }
+async function openExternal(url) {
+  if (!url) return;
+  try {
+    await api('open_browser', {
+      method: 'POST',
+      body: JSON.stringify({ url: url })
+    });
+  } catch (e) {
+    try {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (_) {}
+  }
+}
+window.openExternal = openExternal;
 // esc 文本/属性双安全转义。不能只用 div.innerHTML（它转义 <>& 但不转义引号），
 // 否则字符串拼进 HTML 属性（如 title="uid: ..."）时引号可闭合属性并注入事件处理器。
 // 显式替换 5 个字符：& < > " '（& 必须最先，避免二次转义）。
@@ -141,6 +155,11 @@ function go(v) {
 }
 document.querySelectorAll('.nav a').forEach(a => a.onclick = e => { e.preventDefault(); go(a.dataset.view); history.replaceState(null, '', '#' + a.dataset.view); });
 go((location.hash || '#accounts').slice(1) in TITLES ? (location.hash || '#accounts').slice(1) : 'accounts');
+window.go = go;
+window.addEventListener('hashchange', () => {
+  const h = (location.hash || '#accounts').slice(1);
+  if (h in TITLES) go(h);
+});
 
 /* ── 账号池 ───────────────────────────────────────────────────────── */
 function renderAccounts(list) {
@@ -576,7 +595,7 @@ async function pollLogin() {
 function closeAdd() { stopPoll(); loginState = null; $('addVeil').classList.remove('on'); }
 $('btnCloseAdd').onclick = closeAdd;
 $('btnStartLogin').onclick = startAddLogin;
-$('btnOpenUrl').onclick = () => open($('addUrl').textContent, '_blank');
+$('btnOpenUrl').onclick = () => openExternal($('addUrl').textContent);
 $('btnCopyUrl').onclick = () => navigator.clipboard.writeText($('addUrl').textContent)
   .then(() => toast('链接已复制', 'ok'), () => toast('复制失败，请手动选择复制', 'err'));
 $('importFile').onchange = async () => {
@@ -1675,6 +1694,24 @@ if ($('btnPk')) $('btnPk').onclick = loadPackages;
     });
   };
 
+  // 全局捕获所有外部链接点击，统一由外部浏览器调起
+  document.addEventListener('click', function(e) {
+    const a = e.target.closest && e.target.closest('a');
+    if (!a) return;
+    const href = a.getAttribute('href');
+    if (!href) return;
+    if (href.startsWith('http://') || href.startsWith('https://')) {
+      e.preventDefault();
+      openExternal(href);
+    }
+  });
+
+  // 关于页面与遮罩按钮绑定
+  if ($('btnRepoDesktop')) $('btnRepoDesktop').onclick = () => openExternal('https://github.com/HOnnTaka/workbuddy2api-desktop');
+  if ($('btnRepoUpstream')) $('btnRepoUpstream').onclick = () => openExternal('https://github.com/linguo2625469/workbuddy2api-panel');
+  if ($('btnShieldRetry')) $('btnShieldRetry').onclick = () => { if (typeof window.__wb2api_retry_reconnect === 'function') window.__wb2api_retry_reconnect(); };
+  if ($('btnShieldReload')) $('btnShieldReload').onclick = () => location.reload();
+
   // 关于页面更新检查绑定（经后端同源代理，彻底规避浏览器 CSP 与跨域拦截）
   document.addEventListener('click', async function(e) {
     if (e.target && e.target.id === 'btnCheckUpdateAbout') {
@@ -1685,7 +1722,8 @@ if ($('btnPk')) $('btnPk').onclick = loadPackages;
         const res = await api('check_update');
         if (res && res.ok) {
           if (res.has_update) {
-            toast('发现新版本：' + res.latest_version + '，可前往发布页更新', 'warn');
+            toast('发现新版本：' + res.latest_version + '，正在打开发布页...', 'warn');
+            if (res.release_url) openExternal(res.release_url);
           } else {
             toast('当前已是最新版本：' + res.current_version, 'ok');
           }

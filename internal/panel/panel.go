@@ -16,6 +16,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -181,7 +183,8 @@ func (p *Panel) routes() {
 	p.mux.HandleFunc("GET /panel/api/model_probes", p.withAuth(p.modelProbes))
 	p.mux.HandleFunc("GET /panel/api/config", p.withAuth(p.getConfig))
 	p.mux.HandleFunc("POST /panel/api/config", p.withAuth(p.saveConfig))
-	p.mux.HandleFunc("GET /panel/api/check_update", p.withAuth(p.checkUpdate))
+	p.mux.HandleFunc("GET /panel/api/check_update", p.checkUpdate)
+	p.mux.HandleFunc("POST /panel/api/open_browser", p.openBrowser)
 }
 
 // ServeHTTP 统一入口：先写安全响应头再分发，保证页面、静态资源、API
@@ -700,4 +703,34 @@ func (p *Panel) checkUpdate(w http.ResponseWriter, r *http.Request) {
 		"has_update":      false,
 		"message":         "当前已是最新稳定版本",
 	})
+}
+
+func (p *Panel) openBrowser(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		URL string `json:"url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid_json")
+		return
+	}
+	rawURL := strings.TrimSpace(req.URL)
+	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
+		writeErr(w, http.StatusBadRequest, "invalid_protocol")
+		return
+	}
+
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", rawURL)
+	case "darwin":
+		cmd = exec.Command("open", rawURL)
+	default:
+		cmd = exec.Command("xdg-open", rawURL)
+	}
+	if err := cmd.Start(); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

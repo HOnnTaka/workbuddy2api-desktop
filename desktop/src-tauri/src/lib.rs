@@ -236,7 +236,7 @@ pub fn run() {
         .manage(state.clone())
         .setup(move |app| {
             // 动态构建主窗口并注入全站样式与守护脚本
-            let window = WebviewWindowBuilder::new(
+            let _window = WebviewWindowBuilder::new(
                 app,
                 "main",
                 WebviewUrl::App(PathBuf::from("index.html")),
@@ -246,7 +246,16 @@ pub fn run() {
             .min_inner_size(820.0, 600.0)
             .resizable(true)
             .initialization_script(INJECT_SCRIPT)
-            .build()?;
+                        .on_navigation(|url| {
+                if url.scheme() == "http" || url.scheme() == "https" {
+                    if url.host_str() != Some("127.0.0.1") && url.host_str() != Some("localhost") {
+                        let _ = open::that(url.as_str());
+                        return false;
+                    }
+                }
+                true
+            })
+.build()?;
 
             let app_handle = app.handle().clone();
 
