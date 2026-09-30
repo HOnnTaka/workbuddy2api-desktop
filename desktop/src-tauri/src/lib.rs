@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{
     menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager, Url, WebviewUrl, WebviewWindowBuilder,
+    AppHandle, Manager, Url, WebviewUrl, WebviewWindowBuilder,
 };
 
 const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -130,6 +130,26 @@ struct GithubAsset {
     browser_download_url: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DesktopInfo {
+    pub desktop_version: String,
+    pub core_version: String,
+    pub auto_start: bool,
+    pub start_minimized: bool,
+    pub is_running: bool,
+    pub port: u16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateCheckResult {
+    pub ok: bool,
+    pub has_update: bool,
+    pub current_version: String,
+    pub latest_version: String,
+    pub release_url: String,
+    pub message: String,
+}
+
 impl AppState {
     pub fn new() -> Self {
         let current_exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("."));
@@ -146,7 +166,7 @@ impl AppState {
         let settings_path = base_dir.join("desktop_settings.json");
 
         if !version_path.exists() {
-            let _ = fs::write(&version_path, "v1.11.1");
+            let _ = fs::write(&version_path, "v1.11.9");
         }
 
         Self {
@@ -167,7 +187,7 @@ impl AppState {
         }
 
         if !self.exe_path.exists() {
-            return Err(format!("未找到可执行文件: {:?}", self.exe_path));
+            return Err(format!("未找到核心可执行文件: {:?}", self.exe_path));
         }
 
         let log_file = OpenOptions::new()
@@ -222,100 +242,253 @@ impl AppState {
 
     pub fn get_current_version(&self) -> String {
         fs::read_to_string(&self.version_path)
-            .unwrap_or_else(|_| "v1.11.1".to_string())
+            .unwrap_or_else(|_| "v1.11.9".to_string())
             .trim()
             .to_string()
     }
 }
 
+fn parse_version_tuple(s: &str) -> (u32, u32, u32) {
+    let clean = s.trim().trim_start_matches('v');
+    let base = clean.split('-').next().unwrap_or(clean);
+    let parts: Vec<&str> = base.split('.').collect();
+    let major = parts.first().and_then(|p| p.parse().ok()).unwrap_or(0);
+    let minor = parts.get(1).and_then(|p| p.parse().ok()).unwrap_or(0);
+    let patch = parts.get(2).and_then(|p| p.parse().ok()).unwrap_or(0);
+    (major, minor, patch)
+}
+
+fn get_http_client() -> reqwest::blocking::Client {
+    let mut builder = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(12))
+        .user_agent("WorkBuddy2API-Desktop/1.0");
+
+    if let Ok(proxy_val) = std::env::var("HTTP_PROXY").or_else(|_| std::env::var("http_proxy")) {
+        if let Ok(p) = reqwest::Proxy::all(&proxy_val) {
+            builder = builder.proxy(p);
+        }
+    } else if std::net::TcpStream::connect_timeout(
+        &"127.0.0.1:7897".parse().unwrap(),
+        Duration::from_millis(150),
+    )
+    .is_ok()
+    {
+        if let Ok(p) = reqwest::Proxy::all("http://127.0.0.1:7897") {
+            builder = builder.proxy(p);
+        }
+    }
+
+    builder.build().unwrap_or_else(|_| reqwest::blocking::Client::new())
+}
+
 pub fn check_and_update(state: AppState) {
     thread::spawn(move || {
-        let repos = [
-            "HOnnTaka/workbuddy2api-desktop",
-            "linguo2625469/workbuddy2api-panel",
-        ];
+        let repo = "linguo2625469/workbuddy2api-panel";
+        let api_url = format!("https://api.github.com/repos/{}/releases/latest", repo);
+        let client = get_http_client();
 
-        let client = match reqwest::blocking::Client::builder()
-            .timeout(Duration::from_secs(15))
-            .user_agent("WorkBuddy2API-Desktop/1.0")
-            .build()
-        {
-            Ok(c) => c,
+        let release: GithubRelease = match client.get(&api_url).send().and_then(|r| r.json()) {
+            Ok(data) => data,
             Err(_) => return,
         };
 
-        for repo in repos {
-            let api_url = format!("https://api.github.com/repos/{}/releases/latest", repo);
-            let release: GithubRelease = match client.get(&api_url).send().and_then(|r| r.json()) {
-                Ok(data) => data,
-                Err(_) => continue,
-            };
+        let current_ver = state.get_current_version();
+        let cur_tuple = parse_version_tuple(&current_ver);
+        let latest_ver = release.tag_name.trim();
+        let latest_tuple = parse_version_tuple(latest_ver);
 
-            let current_ver = state.get_current_version();
-            let latest_ver = release.tag_name.trim();
+        if latest_tuple > cur_tuple {
+            if let Some(asset) = release
+                .assets
+                .iter()
+                .find(|a| a.name.contains("windows-amd64.zip"))
+            {
+                let temp_zip = state.base_dir.join("_update_temp.zip");
+                let temp_dir = state.base_dir.join("_update_temp");
 
-            if latest_ver != current_ver {
-                if let Some(asset) = release
-                    .assets
-                    .iter()
-                    .find(|a| a.name.contains("windows-amd64.zip"))
-                {
-                    let temp_zip = state.base_dir.join("_update_temp.zip");
-                    let temp_dir = state.base_dir.join("_update_temp");
-
-                    if let Ok(mut resp) = client.get(&asset.browser_download_url).send() {
-                        if let Ok(mut file) = fs::File::create(&temp_zip) {
-                            let _ = std::io::copy(&mut resp, &mut file);
-                        }
+                if let Ok(mut resp) = client.get(&asset.browser_download_url).send() {
+                    if let Ok(mut file) = fs::File::create(&temp_zip) {
+                        let _ = std::io::copy(&mut resp, &mut file);
                     }
+                }
 
-                    if temp_zip.exists() {
-                        let _ = fs::remove_dir_all(&temp_dir);
-                        let _ = fs::create_dir_all(&temp_dir);
+                if temp_zip.exists() {
+                    let _ = fs::remove_dir_all(&temp_dir);
+                    let _ = fs::create_dir_all(&temp_dir);
 
-                        let unpack_res = Command::new("tar")
-                            .args(["-xf", temp_zip.to_str().unwrap(), "-C", temp_dir.to_str().unwrap()])
-                            .creation_flags(CREATE_NO_WINDOW)
-                            .status();
+                    let unpack_res = Command::new("tar")
+                        .args(["-xf", temp_zip.to_str().unwrap(), "-C", temp_dir.to_str().unwrap()])
+                        .creation_flags(CREATE_NO_WINDOW)
+                        .status();
 
-                        if unpack_res.is_ok() {
-                            state.stop_backend();
-                            thread::sleep(Duration::from_millis(1000));
+                    if unpack_res.is_ok() {
+                        state.stop_backend();
+                        thread::sleep(Duration::from_millis(1000));
 
-                            if let Ok(entries) = fs::read_dir(&temp_dir) {
-                                for entry in entries.flatten() {
-                                    let path = entry.path();
-                                    if path.is_file() && path.file_name().unwrap_or_default() == "wb2api.exe" {
+                        if let Ok(entries) = fs::read_dir(&temp_dir) {
+                            for entry in entries.flatten() {
+                                let path = entry.path();
+                                if path.is_file() && path.file_name().unwrap_or_default() == "wb2api.exe" {
+                                    let backup_exe = state.base_dir.join("wb2api.exe.bak");
+                                    let _ = fs::remove_file(&backup_exe);
+                                    let _ = fs::rename(&state.exe_path, &backup_exe);
+                                    let _ = fs::copy(&path, &state.exe_path);
+                                    let _ = fs::write(&state.version_path, latest_ver);
+                                    break;
+                                } else if path.is_dir() {
+                                    let sub_exe = path.join("wb2api.exe");
+                                    if sub_exe.exists() {
                                         let backup_exe = state.base_dir.join("wb2api.exe.bak");
                                         let _ = fs::remove_file(&backup_exe);
                                         let _ = fs::rename(&state.exe_path, &backup_exe);
-                                        let _ = fs::copy(&path, &state.exe_path);
+                                        let _ = fs::copy(&sub_exe, &state.exe_path);
                                         let _ = fs::write(&state.version_path, latest_ver);
                                         break;
-                                    } else if path.is_dir() {
-                                        let sub_exe = path.join("wb2api.exe");
-                                        if sub_exe.exists() {
-                                            let backup_exe = state.base_dir.join("wb2api.exe.bak");
-                                            let _ = fs::remove_file(&backup_exe);
-                                            let _ = fs::rename(&state.exe_path, &backup_exe);
-                                            let _ = fs::copy(&sub_exe, &state.exe_path);
-                                            let _ = fs::write(&state.version_path, latest_ver);
-                                            break;
-                                        }
                                     }
                                 }
                             }
-
-                            let _ = fs::remove_file(&temp_zip);
-                            let _ = fs::remove_dir_all(&temp_dir);
-                            let _ = state.start_backend();
                         }
+
+                        let _ = fs::remove_file(&temp_zip);
+                        let _ = fs::remove_dir_all(&temp_dir);
+                        let _ = state.start_backend();
                     }
-                    return;
                 }
             }
         }
     });
+}
+
+#[tauri::command]
+fn get_desktop_info(state: tauri::State<'_, AppState>) -> DesktopInfo {
+    let settings = DesktopSettings::load(&state.settings_path);
+    DesktopInfo {
+        desktop_version: "v1.11.1".to_string(),
+        core_version: state.get_current_version(),
+        auto_start: settings.auto_start,
+        start_minimized: settings.start_minimized,
+        is_running: state.is_running(),
+        port: 7863,
+    }
+}
+
+#[tauri::command]
+fn set_desktop_settings(
+    state: tauri::State<'_, AppState>,
+    auto_start: bool,
+    start_minimized: bool,
+) -> Result<(), String> {
+    let mut settings = DesktopSettings::load(&state.settings_path);
+    settings.auto_start = auto_start;
+    settings.start_minimized = start_minimized;
+    settings.save(&state.settings_path)?;
+    set_windows_autostart(&state.desktop_exe_path, auto_start);
+    Ok(())
+}
+
+#[tauri::command]
+fn open_logs(state: tauri::State<'_, AppState>) {
+    let log_file = state.log_path.clone();
+    thread::spawn(move || {
+        let _ = Command::new("notepad.exe").arg(log_file).spawn();
+    });
+}
+
+#[tauri::command]
+fn open_main_panel(app: AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.show();
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+    }
+}
+
+#[tauri::command]
+fn open_url(url: String) {
+    let _ = open::that(url);
+}
+
+#[tauri::command]
+fn check_update_now(state: tauri::State<'_, AppState>) -> UpdateCheckResult {
+    let client = get_http_client();
+    let current_ver = state.get_current_version();
+    let cur_tuple = parse_version_tuple(&current_ver);
+
+    let repo = "linguo2625469/workbuddy2api-panel";
+    let api_url = format!("https://api.github.com/repos/{}/releases/latest", repo);
+
+    match client.get(&api_url).send() {
+        Ok(resp) => {
+            if resp.status().is_success() {
+                if let Ok(release) = resp.json::<GithubRelease>() {
+                    let latest_ver = release.tag_name.trim().to_string();
+                    let latest_tuple = parse_version_tuple(&latest_ver);
+                    let has_update = latest_tuple > cur_tuple;
+                    let release_url = format!("https://github.com/{}/releases/tag/{}", repo, latest_ver);
+
+                    return UpdateCheckResult {
+                        ok: true,
+                        has_update,
+                        current_version: current_ver.clone(),
+                        latest_version: latest_ver.clone(),
+                        release_url,
+                        message: if has_update {
+                            format!("发现新版本 {} (当前 {})，可前往发布页更新", latest_ver, current_ver)
+                        } else {
+                            format!("当前已是最新稳定版本 ({})", current_ver)
+                        },
+                    };
+                }
+            } else if resp.status().as_u16() == 403 {
+                return UpdateCheckResult {
+                    ok: false,
+                    has_update: false,
+                    current_version: current_ver,
+                    latest_version: "".to_string(),
+                    release_url: format!("https://github.com/{}/releases", repo),
+                    message: "GitHub API 请求速率受限 (403)，请开启系统代理后重试".to_string(),
+                };
+            }
+        }
+        Err(e) => {
+            return UpdateCheckResult {
+                ok: false,
+                has_update: false,
+                current_version: current_ver,
+                latest_version: "".to_string(),
+                release_url: format!("https://github.com/{}/releases", repo),
+                message: format!("网络连接受阻: {}", e),
+            };
+        }
+    }
+
+    UpdateCheckResult {
+        ok: false,
+        has_update: false,
+        current_version: current_ver,
+        latest_version: "".to_string(),
+        release_url: format!("https://github.com/{}/releases", repo),
+        message: "未能获取到上游 Release 资产列表".to_string(),
+    }
+}
+
+fn show_about_window(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window("about") {
+        let _ = w.show();
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+    } else {
+        let _ = WebviewWindowBuilder::new(
+            app,
+            "about",
+            WebviewUrl::App(PathBuf::from("about.html")),
+        )
+        .title("关于与版本信息 - WorkBuddy2API Panel")
+        .inner_size(520.0, 520.0)
+        .resizable(false)
+        .center()
+        .build();
+    }
 }
 
 pub fn run() {
@@ -324,7 +497,7 @@ pub fn run() {
 
     let update_state = state.clone();
     thread::spawn(move || {
-        thread::sleep(Duration::from_secs(5));
+        thread::sleep(Duration::from_secs(8));
         check_and_update(update_state);
     });
 
@@ -336,6 +509,14 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }))
+        .invoke_handler(tauri::generate_handler![
+            get_desktop_info,
+            set_desktop_settings,
+            open_logs,
+            open_main_panel,
+            open_url,
+            check_update_now,
+        ])
         .manage(state.clone())
         .setup(move |app| {
             let settings_path = state.settings_path.clone();
@@ -369,7 +550,6 @@ pub fn run() {
                 true
             });
 
-            // 核心修复：最小化启动（默认开启）时，窗口直接设为不可见，彻底消除启动时的页面弹窗
             if current_settings.start_minimized {
                 builder = builder.visible(false);
             }
@@ -405,7 +585,6 @@ pub fn run() {
                             if let Ok(url) = Url::parse("http://127.0.0.1:7863/panel/") {
                                 let _ = window.navigate(url);
                             }
-                            // 如果用户未开启最小化启动，在服务就绪时才展示主界面
                             let s = DesktopSettings::load(&settings_path_for_ready);
                             if !s.start_minimized {
                                 let _ = window.show();
@@ -519,12 +698,7 @@ pub fn run() {
                             }
                         }
                         "about" => {
-                            if let Some(w) = app_handle.get_webview_window("main") {
-                                let _ = w.show();
-                                let _ = w.unminimize();
-                                let _ = w.set_focus();
-                                let _ = w.eval("if (window.__wb2api_show_about) window.__wb2api_show_about();");
-                            }
+                            show_about_window(app_handle);
                         }
                         "logs" => {
                             let log_file = st.log_path.clone();
@@ -535,7 +709,10 @@ pub fn run() {
                             });
                         }
                         "update" => {
-                            check_and_update(st.inner().clone());
+                            show_about_window(app_handle);
+                            if let Some(w) = app_handle.get_webview_window("about") {
+                                let _ = w.eval("if (document.getElementById('btnCheckUpdate')) document.getElementById('btnCheckUpdate').click();");
+                            }
                         }
                         "quit" => {
                             st.stop_backend();
@@ -569,8 +746,10 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = window.hide();
+                if window.label() == "main" || window.label() == "about" {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
             }
         })
         .run(tauri::generate_context!())

@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>关于与版本信息 - WorkBuddy2API Panel</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: #0f172a;
+      color: #f1f5f9;
+      padding: 24px;
+      user-select: none;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+      padding-bottom: 16px;
+      margin-bottom: 20px;
+    }
+    .brand {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .title-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    h1 {
+      font-size: 19px;
+      font-weight: 700;
+      color: #ffffff;
+      letter-spacing: -0.01em;
+    }
+    .badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 6px;
+      background: rgba(56, 189, 248, 0.15);
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+    }
+    .desc {
+      font-size: 12.5px;
+      color: #94a3b8;
+      line-height: 1.5;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .card {
+      background: #1e293b;
+      border: 1px solid rgba(148, 163, 184, 0.12);
+      border-radius: 10px;
+      padding: 14px 16px;
+    }
+    .card-label {
+      font-size: 11.5px;
+      color: #94a3b8;
+      margin-bottom: 6px;
+    }
+    .card-val {
+      font-size: 18px;
+      font-weight: 700;
+      color: #f8fafc;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+    .card-hint {
+      font-size: 11px;
+      color: #64748b;
+      margin-top: 4px;
+    }
+    .status-running {
+      color: #4ade80;
+    }
+    .status-stopped {
+      color: #f87171;
+    }
+    .section-title {
+      font-size: 13.5px;
+      font-weight: 650;
+      color: #e2e8f0;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .settings-box {
+      background: #1e293b;
+      border: 1px solid rgba(148, 163, 184, 0.12);
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .setting-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .setting-info {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .setting-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #f1f5f9;
+    }
+    .setting-desc {
+      font-size: 11.5px;
+      color: #94a3b8;
+    }
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 40px;
+      height: 22px;
+      flex-shrink: 0;
+    }
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: #334155;
+      transition: .2s ease;
+      border-radius: 22px;
+    }
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 16px;
+      width: 16px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: .2s ease;
+      border-radius: 50%;
+    }
+    input:checked + .slider {
+      background-color: #38bdf8;
+    }
+    input:checked + .slider:before {
+      transform: translateX(18px);
+    }
+    .actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: flex-end;
+    }
+    .btn {
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 12.5px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      background: #334155;
+      color: #ffffff;
+      transition: all 0.15s ease;
+    }
+    .btn:hover:not(:disabled) {
+      background: #475569;
+      transform: translateY(-1px);
+    }
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .btn.primary {
+      background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+      border: none;
+      box-shadow: 0 2px 8px rgba(2, 132, 199, 0.35);
+    }
+    .btn.primary:hover:not(:disabled) {
+      filter: brightness(1.1);
+      box-shadow: 0 4px 12px rgba(2, 132, 199, 0.5);
+    }
+    .update-box {
+      margin-top: 14px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 12px;
+      line-height: 1.5;
+      display: none;
+    }
+    .update-box.ok {
+      display: block;
+      background: rgba(34, 197, 94, 0.12);
+      border: 1px solid rgba(34, 197, 94, 0.25);
+      color: #86efac;
+    }
+    .update-box.warn {
+      display: block;
+      background: rgba(234, 179, 8, 0.12);
+      border: 1px solid rgba(234, 179, 8, 0.25);
+      color: #fde047;
+    }
+    .update-box.err {
+      display: block;
+      background: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.25);
+      color: #fca5a5;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="brand">
+      <div class="title-row">
+        <h1>WorkBuddy2API Panel</h1>
+        <span class="badge">桌面原生宿主</span>
+      </div>
+      <div class="desc">基于 Tauri v2 深度优化的多账号网关守护与管理环境</div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="card-label">桌面宿主版本</div>
+      <div class="card-val" id="valDesktopVer">v1.11.1</div>
+      <div class="card-hint">Tauri v2 · WebView2 原生框架</div>
+    </div>
+    <div class="card">
+      <div class="card-label">网关内核版本</div>
+      <div class="card-val" id="valCoreVer">--</div>
+      <div class="card-hint" id="valCoreStatus">检测中...</div>
+    </div>
+    <div class="card">
+      <div class="card-label">服务监听地址</div>
+      <div class="card-val" style="color:#38bdf8;">:7863</div>
+      <div class="card-hint">http://127.0.0.1:7863/panel/</div>
+    </div>
+    <div class="card">
+      <div class="card-label">进程守护状态</div>
+      <div class="card-val" id="valProcessStatus">运行中</div>
+      <div class="card-hint">CREATE_NO_WINDOW 静默后台</div>
+    </div>
+  </div>
+
+  <div class="section-title">系统与自启配置</div>
+  <div class="settings-box">
+    <div class="setting-item">
+      <div class="setting-info">
+        <div class="setting-title">开机自动启动</div>
+        <div class="setting-desc">Windows 登录时自动在后台启动托盘程序并托管服务</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="chkAutoStart">
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="setting-item">
+      <div class="setting-info">
+        <div class="setting-title">最小化静默启动</div>
+        <div class="setting-desc">启动时不弹出主窗口，直接常驻系统托盘</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="chkStartMinimized">
+        <span class="slider"></span>
+      </label>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn" id="btnOpenLogs">查看运行日志</button>
+    <button class="btn" id="btnOpenMain">打开主面板</button>
+    <button class="btn primary" id="btnCheckUpdate">检查更新 (GitHub)</button>
+  </div>
+
+  <div id="updateMsg" class="update-box"></div>
+
+  <script>
+    const invoke = window.__TAURI__ ? window.__TAURI__.core.invoke : null;
+
+    async function loadInfo() {
+      if (invoke) {
+        try {
+          const info = await invoke('get_desktop_info');
+          document.getElementById('valDesktopVer').textContent = info.desktop_version || 'v1.11.1';
+          document.getElementById('valCoreVer').textContent = info.core_version || '未知';
+          document.getElementById('chkAutoStart').checked = !!info.auto_start;
+          document.getElementById('chkStartMinimized').checked = !!info.start_minimized;
+
+          const statusEl = document.getElementById('valProcessStatus');
+          const hintEl = document.getElementById('valCoreStatus');
+          if (info.is_running) {
+            statusEl.textContent = '运行中';
+            statusEl.className = 'card-val status-running';
+            hintEl.textContent = '核心网关服务连接正常';
+          } else {
+            statusEl.textContent = '已停止';
+            statusEl.className = 'card-val status-stopped';
+            hintEl.textContent = '内核未启动或已挂起';
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    }
+
+    async function saveSettings() {
+      if (invoke) {
+        const auto_start = document.getElementById('chkAutoStart').checked;
+        const start_minimized = document.getElementById('chkStartMinimized').checked;
+        try {
+          await invoke('set_desktop_settings', { autoStart: auto_start, startMinimized: start_minimized });
+        } catch (e) {
+          alert('保存设置失败: ' + e);
+        }
+      }
+    }
+
+    document.getElementById('chkAutoStart').addEventListener('change', saveSettings);
+    document.getElementById('chkStartMinimized').addEventListener('change', saveSettings);
+
+    document.getElementById('btnOpenLogs').addEventListener('click', async () => {
+      if (invoke) {
+        await invoke('open_logs');
+      }
+    });
+
+    document.getElementById('btnOpenMain').addEventListener('click', async () => {
+      if (invoke) {
+        await invoke('open_main_panel');
+      }
+    });
+
+    document.getElementById('btnCheckUpdate').addEventListener('click', async () => {
+      const btn = document.getElementById('btnCheckUpdate');
+      const box = document.getElementById('updateMsg');
+      btn.disabled = true;
+      btn.textContent = '正在检查...';
+      box.className = 'update-box';
+      box.style.display = 'none';
+
+      if (invoke) {
+        try {
+          const res = await invoke('check_update_now');
+          if (res.ok) {
+            if (res.has_update) {
+              box.className = 'update-box warn';
+              box.innerHTML = '发现新版本 <strong>' + res.latest_version + '</strong> (当前 ' + res.current_version + ')！<br>' +
+                              '<a href="#" id="linkDownload" style="color:#38bdf8; text-decoration:underline;">点此打开发布页手动下载</a>';
+              document.getElementById('linkDownload').onclick = (e) => {
+                e.preventDefault();
+                invoke('open_url', { url: res.release_url });
+              };
+            } else {
+              box.className = 'update-box ok';
+              box.textContent = res.message || ('当前已是最新版本：' + res.current_version);
+            }
+          } else {
+            box.className = 'update-box err';
+            box.textContent = '检查失败：' + (res.message || '网络连接超时或 API 受限');
+          }
+        } catch (e) {
+          box.className = 'update-box err';
+          box.textContent = '检查更新出错：' + e;
+        } finally {
+          btn.disabled = false;
+          btn.textContent = '检查更新 (GitHub)';
+          box.style.display = 'block';
+        }
+      }
+    });
+
+    loadInfo();
+  </script>
+</body>
+</html>
