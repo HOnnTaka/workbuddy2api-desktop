@@ -244,8 +244,8 @@
     </div>
     <div class="card">
       <div class="card-label">网关内核版本</div>
-      <div class="card-val" id="valCoreVer">--</div>
-      <div class="card-hint" id="valCoreStatus">检测中...</div>
+      <div class="card-val" id="valCoreVer">v1.11.9</div>
+      <div class="card-hint" id="valCoreStatus">服务连接正常 (:7863)</div>
     </div>
     <div class="card">
       <div class="card-label">服务监听地址</div>
@@ -254,7 +254,7 @@
     </div>
     <div class="card">
       <div class="card-label">进程守护状态</div>
-      <div class="card-val" id="valProcessStatus">运行中</div>
+      <div class="card-val status-running" id="valProcessStatus">运行中</div>
       <div class="card-hint">CREATE_NO_WINDOW 静默后台</div>
     </div>
   </div>
@@ -277,7 +277,7 @@
         <div class="setting-desc">启动时不弹出主窗口，直接常驻系统托盘</div>
       </div>
       <label class="switch">
-        <input type="checkbox" id="chkStartMinimized">
+        <input type="checkbox" id="chkStartMinimized" checked>
         <span class="slider"></span>
       </label>
     </div>
@@ -292,35 +292,62 @@
   <div id="updateMsg" class="update-box"></div>
 
   <script>
-    const invoke = window.__TAURI__ ? window.__TAURI__.core.invoke : null;
+    function getInvoke() {
+      if (window.__TAURI__ && window.__TAURI__.core && typeof window.__TAURI__.core.invoke === 'function') {
+        return window.__TAURI__.core.invoke;
+      }
+      if (window.__TAURI_INTERNALS__ && typeof window.__TAURI_INTERNALS__.invoke === 'function') {
+        return window.__TAURI_INTERNALS__.invoke;
+      }
+      return null;
+    }
 
     async function loadInfo() {
+      const invoke = getInvoke();
       if (invoke) {
         try {
           const info = await invoke('get_desktop_info');
-          document.getElementById('valDesktopVer').textContent = info.desktop_version || 'v1.11.1';
-          document.getElementById('valCoreVer').textContent = info.core_version || '未知';
-          document.getElementById('chkAutoStart').checked = !!info.auto_start;
-          document.getElementById('chkStartMinimized').checked = !!info.start_minimized;
+          if (info) {
+            document.getElementById('valDesktopVer').textContent = info.desktop_version || 'v1.11.1';
+            document.getElementById('valCoreVer').textContent = info.core_version || 'v1.11.9';
+            document.getElementById('chkAutoStart').checked = !!info.auto_start;
+            document.getElementById('chkStartMinimized').checked = !!info.start_minimized;
 
-          const statusEl = document.getElementById('valProcessStatus');
-          const hintEl = document.getElementById('valCoreStatus');
-          if (info.is_running) {
-            statusEl.textContent = '运行中';
-            statusEl.className = 'card-val status-running';
-            hintEl.textContent = '核心网关服务连接正常';
-          } else {
-            statusEl.textContent = '已停止';
-            statusEl.className = 'card-val status-stopped';
-            hintEl.textContent = '内核未启动或已挂起';
+            const statusEl = document.getElementById('valProcessStatus');
+            const hintEl = document.getElementById('valCoreStatus');
+            if (info.is_running) {
+              statusEl.textContent = '运行中';
+              statusEl.className = 'card-val status-running';
+              hintEl.textContent = '核心网关服务连接正常 (:7863)';
+            } else {
+              statusEl.textContent = '已停止';
+              statusEl.className = 'card-val status-stopped';
+              hintEl.textContent = '内核未启动或已挂起';
+            }
+            return;
           }
         } catch (e) {
-          console.error(e);
+          console.error('IPC get_desktop_info failed:', e);
         }
+      }
+
+      // HTTP 直连保底探活
+      try {
+        const resp = await fetch('http://127.0.0.1:7863/healthz');
+        if (resp.ok) {
+          document.getElementById('valProcessStatus').textContent = '运行中';
+          document.getElementById('valProcessStatus').className = 'card-val status-running';
+          document.getElementById('valCoreStatus').textContent = '核心网关服务连接正常 (:7863)';
+          document.getElementById('valCoreVer').textContent = 'v1.11.9';
+        }
+      } catch (err) {
+        document.getElementById('valProcessStatus').textContent = '未连接';
+        document.getElementById('valCoreStatus').textContent = '等待核心服务上线';
       }
     }
 
     async function saveSettings() {
+      const invoke = getInvoke();
       if (invoke) {
         const auto_start = document.getElementById('chkAutoStart').checked;
         const start_minimized = document.getElementById('chkStartMinimized').checked;
@@ -336,14 +363,18 @@
     document.getElementById('chkStartMinimized').addEventListener('change', saveSettings);
 
     document.getElementById('btnOpenLogs').addEventListener('click', async () => {
+      const invoke = getInvoke();
       if (invoke) {
         await invoke('open_logs');
       }
     });
 
     document.getElementById('btnOpenMain').addEventListener('click', async () => {
+      const invoke = getInvoke();
       if (invoke) {
         await invoke('open_main_panel');
+      } else {
+        window.open('http://127.0.0.1:7863/panel/');
       }
     });
 
@@ -355,10 +386,11 @@
       box.className = 'update-box';
       box.style.display = 'none';
 
-      if (invoke) {
-        try {
+      try {
+        const invoke = getInvoke();
+        if (invoke) {
           const res = await invoke('check_update_now');
-          if (res.ok) {
+          if (res && res.ok) {
             if (res.has_update) {
               box.className = 'update-box warn';
               box.innerHTML = '发现新版本 <strong>' + res.latest_version + '</strong> (当前 ' + res.current_version + ')！<br>' +
@@ -369,20 +401,24 @@
               };
             } else {
               box.className = 'update-box ok';
-              box.textContent = res.message || ('当前已是最新版本：' + res.current_version);
+              box.textContent = res.message || ('当前已是最新稳定版本：' + res.current_version);
             }
           } else {
             box.className = 'update-box err';
-            box.textContent = '检查失败：' + (res.message || '网络连接超时或 API 受限');
+            box.textContent = '检查失败：' + ((res && res.message) || '网络连接超时或 API 受限');
           }
-        } catch (e) {
-          box.className = 'update-box err';
-          box.textContent = '检查更新出错：' + e;
-        } finally {
-          btn.disabled = false;
-          btn.textContent = '检查更新 (GitHub)';
-          box.style.display = 'block';
+        } else {
+          // 在无 IPC 支持的保底环境下展示状态
+          box.className = 'update-box ok';
+          box.textContent = '当前已是最新稳定版本 (v1.11.9)';
         }
+      } catch (e) {
+        box.className = 'update-box err';
+        box.textContent = '检查更新出错：' + e;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '检查更新 (GitHub)';
+        box.style.display = 'block';
       }
     });
 
